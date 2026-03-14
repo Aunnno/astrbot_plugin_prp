@@ -1,14 +1,42 @@
-# astrbot-plugin-helloworld
+# PRP查分插件 (astrbot_plugin_prp)
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+PRP (Paradigm Reboot Prober) 查分插件，用于查询和上传音游成绩。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+## 功能
 
-# Supports
+- 绑定PRP账号
+- 上传游戏分数
+- 生成B50成绩图片
+- 搜索歌曲信息
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+
+## 命令说明
+
+### `/para help`
+显示查分插件帮助信息。
+
+### `/para bind [账号] [密码]`
+绑定PRP账号到当前QQ号。
+示例: `/bind Aunnno Jiang123+++`
+
+### `/para upload [歌曲名] [难度] [分数]`
+上传游戏分数。
+- 难度: M/I/D/R 或 Massive/Invaded/Detected/Reboot
+- 分数: 0-10000000之间的整数
+示例: `/upload 歌曲名 M 9500000`
+
+### `/para b50`
+生成并发送B50成绩图片。
+需要先绑定账号。
+
+### `/para search [歌曲名]`
+搜索歌曲信息，显示歌曲详情和各难度等级。
+无需绑定账号也可使用。
+
+
+
+
+
+## 依赖
+
+- aiohttp >= 3.11.0
