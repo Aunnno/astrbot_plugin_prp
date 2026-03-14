@@ -4,7 +4,7 @@ import json
 import time
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-import astrbot.api.logger as logger
+from astrbot import logger
 
 
 class PRPApiClient:
