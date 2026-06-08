@@ -1,9 +1,9 @@
 import aiohttp
 import asyncio
+import base64
 import json
 import time
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
 from astrbot import logger
 
 
@@ -31,31 +31,37 @@ class PRPApiClient:
         if self.session and not self.session.closed:
             await self.session.close()
 
-    async def login(self, username: str, password: str) -> Optional[Dict[str, Any]]:
-        """登录PRP API并获取访问令牌"""
+    async def verify_token(self, access_token: str) -> Dict[str, Any]:
+        """验证 token 并获取用户信息，返回 {"username": "..."} 或 {"error": "..."}"""
         await self.ensure_session()
 
-        url = f"{self.BASE_URL}/user/login"
-        form_data = aiohttp.FormData()
-        form_data.add_field("username", username)
-        form_data.add_field("password", password)
-
+        # 阶段1: 尝试 /user/me API
+        url = f"{self.BASE_URL}/user/me"
+        headers = {"Authorization": f"Bearer {access_token}"}
         try:
-            async with self.session.post(url, data=form_data) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    try:
-                        error = await response.text()
-                        return {
-                            "error": f"登录失败: {response.status}",
-                            "details": error,
-                        }
-                    except:
-                        return {"error": f"登录失败: {response.status}"}
-        except Exception as e:
-            return {"error": f"登录请求异常: {str(e)}"}
+            async with self.session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    username = data.get("username")
+                    if username:
+                        return {"username": username}
+        except Exception:
+            pass
+
+        # 阶段2: JWT 解码回退
+        try:
+            parts = access_token.split(".")
+            if len(parts) == 3:
+                payload_b64 = parts[1]
+                payload_b64 += "=" * (4 - len(payload_b64) % 4)
+                payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+                username = payload.get("sub") or payload.get("username")
+                if username:
+                    return {"username": username}
+        except Exception:
+            pass
+
+        return {"error": "无法从Token获取用户信息，请确认Token是否正确"}
 
     async def get_upload_token(self, access_token: str) -> Optional[Dict[str, Any]]:
         """获取上传令牌"""
