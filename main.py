@@ -81,8 +81,8 @@ class PRPPlugin(Star):
 
         try:
             score = int(score_str)
-            if score < 0 or score > 10000000:
-                yield event.plain_result("分数无效，应在0-10000000之间")
+            if score < 0 or score > 1010000:
+                yield event.plain_result("分数无效，应在0-1010000之间")
                 return
         except ValueError:
             yield event.plain_result("分数必须是整数")

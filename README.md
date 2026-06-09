@@ -22,8 +22,8 @@ Token可从PRP网站个人中心获取。
 ### `/para upload <歌曲名> <难度> <分数>`
 上传游戏分数。
 - 难度: M/I/D/R 或 Massive/Invaded/Detected/Reboot
-- 分数: 0-10000000之间的整数
-示例: `/para upload 歌曲名 M 9500000`
+- 分数: 0-1010000之间的整数
+示例: `/para upload 歌曲名 M 950000`
 
 ### `/para b50`
 生成并发送B50成绩图片。
