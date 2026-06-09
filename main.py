@@ -2,8 +2,6 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot import logger
 from typing import Dict, Any, Optional
-import tempfile
-import os
 
 from .utils.prp_api import PRPApiClient
 from .utils.storage import BindingManager
@@ -20,9 +18,8 @@ class PRPPlugin(Star):
         logger.info("PRP插件 v2.0.0 初始化完成")
 
     async def _ensure_bound(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """确保用户已绑定，返回绑定信息或 None"""
         binding = await self.bindings.get(user_id)
-        if not binding:
+        if not binding or "username" not in binding or "access_token" not in binding:
             return None
         return binding
 
@@ -31,28 +28,29 @@ class PRPPlugin(Star):
         pass
 
     @para.command("bind")
-    async def bind_account(self, event: AstrMessageEvent, token: str = ""):
-        """绑定PRP账号（使用Token）
-        用法: /para bind <token>
-        Token可从PRP网站个人中心获取
+    async def bind_account(self, event: AstrMessageEvent, username: str = "", password: str = ""):
+        """绑定PRP账号
+        用法: /para bind <账号> <密码>
         """
         user_id = event.get_sender_id()
         if not user_id:
             yield event.plain_result("无法获取用户ID")
             return
 
-        if not token:
-            yield event.plain_result(
-                "用法: /para bind <token>\nToken可从PRP网站个人中心获取"
-            )
+        if not username or not password:
+            yield event.plain_result("用法: /para bind <账号> <密码>")
             return
 
-        result = await self.bindings.bind_and_verify(self.api_client, user_id, token)
-        if "error" in result:
-            yield event.plain_result(f"绑定失败: {result['error']}")
+        yield event.plain_result("正在登录验证...")
+        login_result = await self.api_client.login(username, password)
+        if "error" in login_result:
+            yield event.plain_result(f"绑定失败: {login_result['error']}")
             return
 
-        yield event.plain_result(f"绑定成功! 账号: {result['username']}")
+        await self.bindings.save(
+            user_id, login_result["username"], login_result["access_token"]
+        )
+        yield event.plain_result(f"绑定成功! 账号: {login_result['username']}")
 
     @para.command("upload")
     async def upload_score(
@@ -70,7 +68,7 @@ class PRPPlugin(Star):
 
         binding = await self._ensure_bound(user_id)
         if not binding:
-            yield event.plain_result("请先使用 /para bind <token> 绑定PRP账号")
+            yield event.plain_result("请先使用 /para bind <账号> <密码> 绑定PRP账号")
             return
 
         if not song_name or not difficulty or not score_str:
@@ -89,7 +87,8 @@ class PRPPlugin(Star):
             return
 
         upload_result = await self.api_client.upload_score(
-            binding["username"], binding["access_token"], song_name, difficulty, score
+            binding["username"], binding["access_token"],
+            song_name, difficulty, score
         )
 
         if "error" in upload_result:
@@ -102,7 +101,7 @@ class PRPPlugin(Star):
 
     @para.command("b50")
     async def get_b50(self, event: AstrMessageEvent):
-        """获取B50图片
+        """获取B50成绩
         用法: /para b50
         """
         user_id = event.get_sender_id()
@@ -112,28 +111,35 @@ class PRPPlugin(Star):
 
         binding = await self._ensure_bound(user_id)
         if not binding:
-            yield event.plain_result("请先使用 /para bind <token> 绑定PRP账号")
+            yield event.plain_result("请先使用 /para bind <账号> <密码> 绑定PRP账号")
             return
 
         username = binding["username"]
         access_token = binding["access_token"]
 
-        image_data = await self.api_client.get_b50_image(username, access_token)
-        if not image_data:
-            yield event.plain_result("获取B50图片失败，Token可能已过期，请重新绑定")
+        records_data = await self.api_client.get_user_records(
+            username, access_token, scope="b50", page_size=50
+        )
+
+        if not records_data or "error" in records_data:
+            yield event.plain_result("获取B50失败，请稍后重试")
             return
 
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
-            tmp_file.write(image_data)
-            tmp_path = tmp_file.name
+        records = records_data.get("records", [])
+        if not records:
+            yield event.plain_result("暂无B50成绩记录")
+            return
 
-        try:
-            yield event.image_result(tmp_path)
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
+        lines = [f"B50 成绩 (共 {len(records)} 条):"]
+        for i, r in enumerate(records[:50], 1):
+            chart = r.get("chart", {})
+            title = chart.get("title", "未知")
+            diff = chart.get("difficulty", "?")
+            r_score = r.get("score", 0)
+            rating = r.get("rating", 0)
+            lines.append(f"#{i} {title} [{diff}] {r_score} (rating: {rating})")
+
+        yield event.plain_result("\n".join(lines))
 
     @para.command("search")
     async def search_song(self, event: AstrMessageEvent, song_name: str = ""):
@@ -201,9 +207,9 @@ class PRPPlugin(Star):
         help_text = """
 欢迎使用Bamtheta范式起源查分bot! 本bot基于prp.icel.site查分网站搭建。
 命令：
-- /para bind <token>  绑定PRP账号 (Token可从PRP网站个人中心获取)
+- /para bind <账号> <密码>  绑定PRP账号
 - /para upload <歌曲> <难度> <分数>  上传分数 (难度: M/I/D/R)
-- /para b50  获取B50成绩图片
+- /para b50  获取B50成绩
 - /para search <歌曲>  搜索歌曲
 - /para unbind  解除账号绑定
 - /para help  获取帮助

@@ -1,5 +1,4 @@
 import aiohttp
-import asyncio
 import base64
 import json
 import time
@@ -8,7 +7,7 @@ from astrbot import logger
 
 
 class PRPApiClient:
-    BASE_URL = "https://api.prp.icel.site"
+    BASE_URL = "https://api.prp.icel.site/api/v2"
 
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
@@ -31,91 +30,42 @@ class PRPApiClient:
         if self.session and not self.session.closed:
             await self.session.close()
 
-    async def verify_token(self, access_token: str) -> Dict[str, Any]:
-        """验证 token 并获取用户信息，返回 {"username": "..."} 或 {"error": "..."}"""
+    async def login(self, username: str, password: str) -> Dict[str, Any]:
+        """用户名密码登录，返回 {"access_token": "...", "username": "..."} 或 {"error": "..."}"""
         await self.ensure_session()
 
-        # 阶段1: 尝试 /user/me API
-        url = f"{self.BASE_URL}/user/me"
-        headers = {"Authorization": f"Bearer {access_token}"}
+        url = f"{self.BASE_URL}/user/login"
+        form_data = aiohttp.FormData()
+        form_data.add_field("username", username)
+        form_data.add_field("password", password)
+
         try:
-            async with self.session.get(url, headers=headers) as resp:
+            async with self.session.post(url, data=form_data) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    username = data.get("username")
-                    if username:
-                        return {"username": username}
-        except Exception:
-            pass
-
-        # 阶段2: JWT 解码回退
-        try:
-            parts = access_token.split(".")
-            if len(parts) == 3:
-                payload_b64 = parts[1]
-                payload_b64 += "=" * (4 - len(payload_b64) % 4)
-                payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-                username = payload.get("sub") or payload.get("username")
-                if username:
-                    return {"username": username}
-        except Exception:
-            pass
-
-        return {"error": "无法从Token获取用户信息，请确认Token是否正确"}
-
-    async def get_upload_token(self, access_token: str) -> Optional[Dict[str, Any]]:
-        """获取上传令牌"""
-        await self.ensure_session()
-
-        url = f"{self.BASE_URL}/user/me/upload-token"
-        headers = {"Authorization": f"Bearer {access_token}"}
-
-        try:
-            async with self.session.post(url, headers=headers) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
+                    access_token = data.get("access_token")
+                    if not access_token:
+                        return {"error": "登录返回数据缺少 access_token"}
+                    # 从 JWT 中解析 username
                     try:
-                        error = await response.text()
-                        return {
-                            "error": f"获取上传令牌失败: {response.status}",
-                            "details": error,
-                        }
-                    except:
-                        return {"error": f"获取上传令牌失败: {response.status}"}
-        except Exception as e:
-            return {"error": f"获取上传令牌请求异常: {str(e)}"}
-
-    async def get_b50_image(self, username: str, access_token: str) -> Optional[bytes]:
-        """获取B50图片（二进制数据）"""
-        await self.ensure_session()
-
-        # API使用小写用户名
-        username = username.lower()
-
-        url = f"{self.BASE_URL}/records/{username}/export/b50"
-        headers = {"Authorization": f"Bearer {access_token}"}
-
-        try:
-            async with self.session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    # 图片数据
-                    image_data = await response.read()
-                    return image_data
-                else:
-                    # 记录错误状态码
-                    logger.warning(f"B50 API返回错误状态码: {response.status}, URL: {url}")
-                    # 尝试读取错误响应
-                    try:
-                        error_text = await response.text()
-                        logger.warning(f"B50 API错误响应: {error_text[:200]}")
-                    except:
+                        parts = access_token.split(".")
+                        if len(parts) == 3:
+                            payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+                            payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+                            username_from_jwt = payload.get("sub") or payload.get("username")
+                            if username_from_jwt:
+                                return {"access_token": access_token, "username": username_from_jwt}
+                    except Exception:
                         pass
-                    # 返回None表示失败，调用者可以检查
-                    return None
+                    return {"access_token": access_token, "username": username}
+                else:
+                    try:
+                        error = await resp.text()
+                        return {"error": f"登录失败 ({resp.status}): {error}"}
+                    except Exception:
+                        return {"error": f"登录失败: {resp.status}"}
         except Exception as e:
-            logger.warning(f"B50 API请求异常: {str(e)}")
-            return None
+            return {"error": f"登录请求异常: {str(e)}"}
 
     async def search_song(
         self, song_name: str, access_token: Optional[str] = None
@@ -171,8 +121,7 @@ class PRPApiClient:
             difficulty_info = {
                 "difficulty": item.get("difficulty"),
                 "level": item.get("level"),
-                "difficulty_id": item.get("difficulty_id"),
-                "song_level_id": item.get("song_level_id"),  # 重要：上传需要这个
+                "chart_id": item.get("id"),  # API v2: id 即 chart_id，上传需要
             }
             unique_songs[song_id]["difficulties"].append(difficulty_info)
 
@@ -183,37 +132,6 @@ class PRPApiClient:
             if song_name.lower() in song.get("title", "").lower():
                 matched.append(song)
         return matched
-
-    async def get_song_details(
-        self, song_id: str, access_token: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
-        """获取歌曲详细信息"""
-        await self.ensure_session()
-
-        url = f"{self.BASE_URL}/songs/{song_id}"
-        params = {"src": "prp"}
-
-        headers = {}
-        if access_token:
-            headers["Authorization"] = f"Bearer {access_token}"
-
-        try:
-            async with self.session.get(
-                url, params=params, headers=headers
-            ) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    try:
-                        error = await response.text()
-                        return {
-                            "error": f"获取歌曲详情失败: {response.status}",
-                            "details": error,
-                        }
-                    except:
-                        return {"error": f"获取歌曲详情失败: {response.status}"}
-        except Exception as e:
-            return {"error": f"获取歌曲详情请求异常: {str(e)}"}
 
     async def upload_score(
         self,
@@ -230,10 +148,8 @@ class PRPApiClient:
         """
         await self.ensure_session()
 
-        # API使用小写用户名，确保用户名是小写
         username = username.lower()
 
-        # 首先需要搜索歌曲
         songs = await self.search_song(song_name, access_token)
         if not songs:
             return {"error": "歌曲未找到"}
@@ -261,44 +177,32 @@ class PRPApiClient:
 
         difficulty_normalized = difficulty_map.get(difficulty.lower(), difficulty)
 
-        # 查找对应的song_level_id
-        song_level_id = None
+        # 查找对应的chart_id
+        chart_id = None
         available_difficulties = []
 
         for diff in target_song.get("difficulties", []):
             diff_name = diff.get("difficulty")
             available_difficulties.append(diff_name)
             if diff_name == difficulty_normalized:
-                song_level_id = diff.get("song_level_id")
+                chart_id = diff.get("chart_id")
                 break
 
-        if song_level_id is None:
+        if chart_id is None:
             return {
                 "error": f"该歌曲没有指定的难度: {difficulty_normalized}. 可用难度: {available_difficulties}"
             }
 
-        # 获取上传令牌（根据API规范，可能需要）
-        upload_token_data = await self.get_upload_token(access_token)
-        upload_token = (
-            upload_token_data.get("upload_token") if upload_token_data else None
-        )
-
-        # 构建上传数据（根据OpenAPI规范）
         url = f"{self.BASE_URL}/records/{username}"
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
         }
 
-        # 正确的格式：使用play_records字段，每个记录包含song_level_id和score
         payload = {
-            "play_records": [{"song_level_id": song_level_id, "score": score}],
-            "is_replace": overwrite_best,  # 对应overwrite_best
+            "play_records": [{"chart_id": chart_id, "score": score}],
+            "is_replace": overwrite_best,
         }
-
-        # 添加upload_token如果存在
-        if upload_token:
-            payload["upload_token"] = upload_token
 
         try:
             async with self.session.post(
