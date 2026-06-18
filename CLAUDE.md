@@ -14,9 +14,10 @@ PRP (Paradigm Reboot Prober) 查分插件，基于 AstrBot 框架开发，用于
 ## 项目结构
 
 ```
-main.py              # PRPPlugin — 命令注册与分发 (~229行)
+main.py              # PRPPlugin — 命令注册与分发 (~227行)
 metadata.yaml        # 插件元数据（版本 v2.0.0）
 requirements.txt     # 依赖声明
+API.md               # PRP API 文档（基于实际接口逆向整理）
 utils/
   __init__.py        # 导出 PRPApiClient, BindingManager
   prp_api.py         # PRP API 客户端（login、B50、上传、搜索）
@@ -72,11 +73,11 @@ class PRPPlugin(Star):
 
 ## 开发注意事项
 
-- **API basePath 为 `/api/v2`**：`BASE_URL = "https://api.prp.icel.site/api/v2"`
+- **API basePath 为 `/api/v2`**：`BASE_URL = "https://api.prp.icel.site/api/v2"`，详见 `API.md`
 - 上传分数有效范围为 `[0, 1010000]`，非 `10000000`
 - 上传使用 `chart_id`（即 API 返回的 `id` 字段），非旧的 `song_level_id`
 - B50 图片导出端点已移除，改为 `GET /records/{username}?scope=b50` 获取 JSON 后文本展示
 - logger 从 `astrbot` 导入（非 `astrbot.api`），历史上有导入路径 bug
 - BindingManager 通过 `__init__(plugin)` 接收 Star 实例以访问 KV 存储
-- 不要手动创建文档文件（除 CLAUDE.md）
-- `.python-version` 为 untracked 文件
+- 不要手动创建文档文件（除 CLAUDE.md 和 API.md）
+- `.python-version` 已加入 `.gitignore`（pyenv 本地环境文件）
