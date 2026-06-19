@@ -254,3 +254,39 @@ class PRPApiClient:
                         return {"error": f"获取用户记录失败: {response.status}"}
         except Exception as e:
             return {"error": f"获取用户记录请求异常: {str(e)}"}
+
+    async def get_b50_records(self, username: str, access_token: str) -> List[Dict[str, Any]]:
+        """获取 B35 + B15 合并记录，按 rating 降序，供 B50 图片生成使用"""
+        await self.ensure_session()
+
+        username = username.lower()
+        headers = {"Authorization": f"Bearer {access_token}"}
+        all_records = []
+
+        for b15, limit in [(False, 35), (True, 15)]:
+            params = {
+                "scope": "b50", "b15": "true" if b15 else "false",
+                "page_size": str(limit),
+                "sort_by": "rating", "order": "desc",
+            }
+            try:
+                async with self.session.get(
+                    f"{self.BASE_URL}/records/{username}",
+                    params=params, headers=headers,
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for r in data.get("records", []):
+                            chart = r.get("chart", {})
+                            all_records.append({
+                                "title": chart.get("title", ""),
+                                "difficulty": chart.get("difficulty", ""),
+                                "level": chart.get("level", 0),
+                                "score": r.get("score", 0),
+                                "rating": r.get("rating", 0) / 100.0,
+                                "cover": chart.get("cover", ""),
+                            })
+            except Exception:
+                continue
+
+        return all_records

@@ -9,7 +9,7 @@ PRP (Paradigm Reboot Prober) 查分插件，基于 AstrBot 框架开发，用于
 - Python 3.12
 - AstrBot 插件框架 (`astrbot.api`)
 - aiohttp >= 3.11.0
-- 无其他第三方依赖
+- Pillow >= 10.0
 
 ## 项目结构
 
@@ -22,6 +22,8 @@ utils/
   __init__.py        # 导出 PRPApiClient, BindingManager
   prp_api.py         # PRP API 客户端（login、B50、上传、搜索）
   storage.py         # BindingManager — 纯 KV 存储的绑定管理
+test/
+  generate_b50.py    # B50 成绩图片生成脚本（独立运行）
 ```
 
 ## 架构模式
@@ -76,7 +78,9 @@ class PRPPlugin(Star):
 - **API basePath 为 `/api/v2`**：`BASE_URL = "https://api.prp.icel.site/api/v2"`，详见 `API.md`
 - 上传分数有效范围为 `[0, 1010000]`，非 `10000000`
 - 上传使用 `chart_id`（即 API 返回的 `id` 字段），非旧的 `song_level_id`
-- B50 图片导出端点已移除，改为 `GET /records/{username}?scope=b50` 获取 JSON 后文本展示
+- B50 图片导出端点已移除，改为 `GET /records/{username}?scope=b50` 获取 JSON
+- B50 图片生成脚本 `test/generate_b50.py`，支持模拟数据和真实 API，输出 10×5 卡片布局
+- Rating 计算：API 返回的 `rating` 字段为单曲 Rating × 100 的整数
 - logger 从 `astrbot` 导入（非 `astrbot.api`），历史上有导入路径 bug
 - BindingManager 通过 `__init__(plugin)` 接收 Star 实例以访问 KV 存储
 - 不要手动创建文档文件（除 CLAUDE.md 和 API.md）

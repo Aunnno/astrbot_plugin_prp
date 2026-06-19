@@ -2,9 +2,12 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
 from astrbot import logger
 from typing import Dict, Any, Optional
+import tempfile
+import os
 
 from .utils.prp_api import PRPApiClient
 from .utils.storage import BindingManager
+from .utils.b50_image import generate as generate_b50_image
 
 
 @register("prp_plugin", "Aunnno", "PRP查分插件", "2.0.0")
@@ -101,7 +104,7 @@ class PRPPlugin(Star):
 
     @para.command("b50")
     async def get_b50(self, event: AstrMessageEvent):
-        """获取B50成绩
+        """获取B50成绩图片
         用法: /para b50
         """
         user_id = event.get_sender_id()
@@ -117,29 +120,26 @@ class PRPPlugin(Star):
         username = binding["username"]
         access_token = binding["access_token"]
 
-        records_data = await self.api_client.get_user_records(
-            username, access_token, scope="b50", page_size=50
-        )
+        yield event.plain_result("正在生成B50图片，请稍候...")
 
-        if not records_data or "error" in records_data:
-            yield event.plain_result("获取B50失败，请稍后重试")
-            return
-
-        records = records_data.get("records", [])
+        records = await self.api_client.get_b50_records(username, access_token)
         if not records:
-            yield event.plain_result("暂无B50成绩记录")
+            yield event.plain_result("获取B50失败或暂无成绩记录")
             return
 
-        lines = [f"B50 成绩 (共 {len(records)} 条):"]
-        for i, r in enumerate(records[:50], 1):
-            chart = r.get("chart", {})
-            title = chart.get("title", "未知")
-            diff = chart.get("difficulty", "?")
-            r_score = r.get("score", 0)
-            rating = r.get("rating", 0)
-            lines.append(f"#{i} {title} [{diff}] {r_score} (rating: {rating})")
+        img = generate_b50_image(records, username=username)
 
-        yield event.plain_result("\n".join(lines))
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            img.save(f, "PNG")
+            tmp_path = f.name
+
+        try:
+            yield event.image_result(tmp_path)
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
     @para.command("search")
     async def search_song(self, event: AstrMessageEvent, song_name: str = ""):
@@ -209,7 +209,7 @@ class PRPPlugin(Star):
 命令：
 - /para bind <账号> <密码>  绑定PRP账号
 - /para upload <歌曲> <难度> <分数>  上传分数 (难度: M/I/D/R)
-- /para b50  获取B50成绩
+- /para b50  获取B50成绩图片
 - /para search <歌曲>  搜索歌曲
 - /para unbind  解除账号绑定
 - /para help  获取帮助
