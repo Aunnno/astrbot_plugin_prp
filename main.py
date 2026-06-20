@@ -216,11 +216,6 @@ class PRPPlugin(Star):
 """
         yield event.plain_result(help_text)
 
-    @filter.command("help")
-    async def show_help(self, event: AstrMessageEvent):
-        yield event.plain_result(
-            "命令已迁移到 para 指令组，请使用 /para help 查看详细帮助。"
-        )
 
     async def terminate(self):
         await self.api_client.close()
